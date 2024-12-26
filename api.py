@@ -34,5 +34,6 @@ def decode_url():
 
     except Exception as e:
         return jsonify({'error': 'Error processing request', 'details':str(e)}), 500
+
 if __name__ == '__main__':
-  app.run(debug=True)
+    app.run(debug=True)
