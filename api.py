@@ -1,22 +1,20 @@
 from flask import Flask, request, jsonify
-import re
 from urllib.parse import unquote
 from base64 import b64decode
 
 app = Flask(__name__)
 
 def dynamicLV(url):
-    # Updated regex to correctly capture the Base64 encoded part after the last 'r='
-    url_pattern = r'r=([^&]*)'
-    match = re.search(url_pattern, url[::-1]) # Use [::-1] to reverse the string
-    if match:
-        base64_string = match.group(1)
-        decoded_base64 = unquote(base64_string)
-        try:
+    try:
+        # Split the URL by 'r=' and get the last part
+        parts = url.split('r=')
+        if len(parts) > 1:
+            base64_string = parts[-1]
+            decoded_base64 = unquote(base64_string)
             return b64decode(decoded_base64).decode('utf-8')
-        except Exception:
-            return None
-    else:
+        else:
+          return None
+    except Exception:
         return None
 
 @app.route('/api/dlv', methods=['GET'])
