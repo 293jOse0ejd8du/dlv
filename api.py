@@ -1,57 +1,98 @@
+import os
 from flask import Flask, request, jsonify
 import re
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 from base64 import b64decode
+from typing import Optional
+import logging
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from dotenv import load_dotenv
 
-# Initialize the Flask application
+load_dotenv()
+
 app = Flask(__name__)
 
-# Function to decode Linkvertise URLs
-def dynamicLV(url):
-    # Regular expression to find the Base64-encoded part of the Linkvertise URL
-    url_pattern = r'https:\/\/linkvertise\.com\/.*r=([^&]*)'
-    match = re.search(url_pattern, url) # Search for the url_pattern in the given url
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+API_ENDPOINT = os.getenv("API_ENDPOINT", "/api/dlv")
+# API_KEY = os.getenv("API_KEY", "your-secret-api-key") #Removed API Key
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["100 per minute"],
+    storage_uri="memory://"
+)
+
+cache = {}
+
+def dynamicLV(url: str) -> Optional[str]:
+    if not isinstance(url, str) or not url.strip():
+        logging.warning(f"Invalid input: URL must be a non-empty string")
+        return None
+    url_pattern = r'https:\/\/linkvertise\.com\/.*r=([^&]*)'
+    match = re.search(url_pattern, url)
     if match:
-        base64_string = match.group(1) # Extract the Base64 encoded string from regex match
-        decoded_base64 = unquote(base64_string) # URL decode the extracted Base64 string
+        base64_string = match.group(1)
+        decoded_base64 = unquote(base64_string)
         try:
-            # Attempt to Base64 decode and then UTF-8 decode the string
-            return b64decode(decoded_base64).decode('utf-8')
-        except Exception:
-            # Return None if there is an exception during decoding
+            decoded_url = b64decode(decoded_base64).decode('utf-8')
+            cache[url] = decoded_url
+            return decoded_url
+        except Exception as e:
+            logging.error(f"Error decoding URL: {url}, Error: {e}")
             return None
     else:
-        # Return None if the url doesn't match the url_pattern
+        logging.info(f"Invalid Linkvertise URL format: {url}")
         return None
 
-# Define the API endpoint for decoding Linkvertise URLs
-@app.route('/api/dlv', methods=['GET'])
+# @app.before_request #Removed API Key check
+# def before_request():
+#     if request.endpoint != "root" and request.headers.get("X-API-Key") != API_KEY:
+#         return jsonify({"error":"Missing or Invalid API Key"}), 401
+
+@app.route("/", methods=['GET'])
+def root():
+    return jsonify({
+        "message": "Welcome to the Dynamic Linkvertise (DLV) API",
+        "documentation": {
+            "endpoint": API_ENDPOINT,
+            "method": "GET",
+            "query_parameters": {
+                "url": "The Linkvertise URL to decode."
+            },
+           #  "headers": {  Removed the api key
+           #      "X-API-Key": "API key for the service",
+           #  },
+            "response": {
+                "success": "Returns the decoded url in the \"result\" key.",
+                "error": "Returns an error message if the URL cannot be decoded or some other error happens."
+            }
+         }
+    }), 200
+
+@app.route(API_ENDPOINT, methods=['GET'])
+@limiter.limit("100 per minute")
 def decode_url():
     try:
-        # Get the 'url' parameter from the URL query string
         linkvertise_url = request.args.get('url')
 
-        # Check if the 'url' parameter is missing
         if not linkvertise_url:
-            # Return an error response with a 400 status code if missing.
             return jsonify({'error': 'Missing "url" parameter'}), 400
-
-        # Call the dynamicLV function to decode the URL
+        
+        if not urlparse(linkvertise_url).scheme:
+            return jsonify({'error': 'Invalid URL format, please include "https://" or "http://"'}), 400
+            
         decoded_url = dynamicLV(linkvertise_url)
 
-        # Check if decoding is successful
         if decoded_url:
-            # Return the decoded URL in the 'result' key with a 200 status code
             return jsonify({'result': decoded_url}), 200
         else:
-            # Return an error response if decoding fails with a 400 status code
             return jsonify({'error': 'Invalid or un-decodable Linkvertise URL'}), 400
 
     except Exception as e:
-        # Handle any exceptions that may occur during the process
-        return jsonify({'error': 'Error processing request', 'details':str(e)}), 500
+        return jsonify({'error': 'Error processing request', 'details': str(e)}), 500
 
-# Run the Flask app in debug mode when the script is executed directly
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False)
