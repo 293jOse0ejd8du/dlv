@@ -6,9 +6,9 @@ from base64 import b64decode
 app = Flask(__name__)
 
 def dynamicLV(url):
-    # Updated regex to correctly capture the Base64 encoded part after 'r='
-    url_pattern = r'https:\/\/linkvertise\.com\/.*r=([^&]*)'
-    match = re.search(url_pattern, url)
+    # Updated regex to correctly capture the Base64 encoded part after the last 'r='
+    url_pattern = r'r=([^&]*)'
+    match = re.search(url_pattern, url[::-1]) # Use [::-1] to reverse the string
     if match:
         base64_string = match.group(1)
         decoded_base64 = unquote(base64_string)
